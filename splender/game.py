@@ -101,11 +101,10 @@ class GameState:
                 raise ValueError("토큰이 10개를 초과했는데 버릴 토큰 정보가 없습니다.")
 
         # [3단계] 귀족 방문 체크
-        # 규칙: 조건을 동시에 만족하는 귀족이 여러 명이면 첫 번째를 자동 선택합니다.
-        #       (모든 귀족은 3점으로 동일하므로 전략적 차이 없음)
+        # 2명 이상 동시 충족 시 무작위로 1명 선택 (전략적 선택은 에이전트 고도화 시 확장 예정)
         eligible_nobles = self._get_eligible_nobles(player)
         if eligible_nobles:
-            chosen_noble = eligible_nobles[0]
+            chosen_noble = random.choice(eligible_nobles)
             player.nobles.append(chosen_noble)
             player.score += chosen_noble.points
             self.nobles.remove(chosen_noble)

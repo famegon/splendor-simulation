@@ -1,4 +1,5 @@
 import random
+import itertools
 from .player import Player
 from .components import Card, Noble
 
@@ -41,7 +42,7 @@ class GameState:
         self.nobles = all_nobles[:self.num_players + 1]
 
     # ==========================================
-    # 턴 진행 파이프라인 (명곤 님의 3단계 룰 완벽 반영)
+    # 턴 진행 파이프라인
     # ==========================================
     def step(self, action):
         """
@@ -170,3 +171,118 @@ class GameState:
             "nobles": [n.to_dict() for n in self.nobles],
             "players": [p.to_dict() for p in self.players]
         }
+    def get_legal_actions(self):
+        """현재 턴의 플레이어가 할 수 있는 모든 유효한 행동 리스트를 반환합니다."""
+        legal_actions = []
+        player = self.players[self.current_player_idx]
+        colors = ['white', 'blue', 'green', 'red', 'black']
+
+        # --------------------------------------------------
+        # [1] 액션 D: 카드 구매 (가장 우선순위가 높은 행동)
+        # --------------------------------------------------
+        # 보드에 깔린 카드 확인
+        for tier, cards in self.board.items():
+            for card in cards:
+                if player.can_buy(card):
+                    legal_actions.append({
+                        'type': 'purchase', 'tier': tier, 'card_id': card.id, 'source': 'board'
+                    })
+        # 예약한 카드 확인
+        for card in player.reserved:
+            if player.can_buy(card):
+                legal_actions.append({
+                    'type': 'purchase', 'tier': card.tier, 'card_id': card.id, 'source': 'reserved'
+                })
+
+        # --------------------------------------------------
+        # [2] 액션 C: 카드 예약 (예약 슬롯 3장 미만일 때만)
+        # --------------------------------------------------
+        if len(player.reserved) < 3:
+            # C-1. 보드 공개 카드 예약
+            for tier, cards in self.board.items():
+                for card in cards:
+                    # 예약 시 황금 토큰을 받는 엣지 케이스는 step()에서 처리되므로 여기선 행동만 정의
+                    legal_actions.append({'type': 'reserve_public', 'tier': tier, 'card_id': card.id})
+            
+            # C-2. 블라인드 예약 (해당 레벨 덱이 비어있지 않을 때만)
+            for tier, deck in self.decks.items():
+                if len(deck) > 0:
+                    legal_actions.append({'type': 'reserve_blind', 'tier': tier})
+
+        # --------------------------------------------------
+        # [3] 액션 A & B: 보석 가져오기 (토큰 10개 초과 시 반납 조합 포함)
+        # --------------------------------------------------
+        available_colors = [c for c in colors if self.bank[c] > 0]
+        
+        # 액션 A: 서로 다른 색 1~3개 가져오기 (자발적 1, 2개 선택 허용)
+        # itertools.combinations를 통해 1개, 2개, 3개 고르는 모든 부분집합 생성
+        take_diff_combos = []
+        max_take = min(3, len(available_colors))
+        for i in range(1, max_take + 1):
+            take_diff_combos.extend(list(itertools.combinations(available_colors, i)))
+            
+        for combo in take_diff_combos: # combo 예: ('red', 'blue')
+            legal_actions.extend(self._create_take_actions_with_discard(player, 'take_diff', list(combo)))
+
+        # 액션 B: 같은 색 2개 가져오기 (은행에 4개 이상 있을 때만)
+        for color in colors:
+            if self.bank[color] >= 4:
+                legal_actions.extend(self._create_take_actions_with_discard(player, 'take_same', color))
+
+        # --------------------------------------------------
+        # [4] 액션 E: 패스 (아무것도 할 수 없을 때의 안전망)
+        # --------------------------------------------------
+        if not legal_actions:
+            legal_actions.append({'type': 'pass'})
+
+        return legal_actions
+
+    # ==========================================
+    # 버릴 토큰의 '경우의 수'를 계산해주는 마법의 보조 함수
+    # ==========================================
+    def _create_take_actions_with_discard(self, player, action_type, take_data):
+        """
+        토큰을 가져왔을 때 10개가 넘으면, 버릴 수 있는 모든 토큰 조합을 계산하여
+        각각을 독립된 액션으로 쪼개서 반환합니다.
+        """
+        actions = []
+        
+        # 가상으로 토큰을 받았을 때의 내 인벤토리 상태 계산
+        temp_gems = player.gems.copy()
+        if action_type == 'take_diff':
+            for c in take_data: temp_gems[c] += 1
+        elif action_type == 'take_same':
+            temp_gems[take_data] += 2
+            
+        total_after_take = sum(temp_gems.values())
+        discard_count = total_after_take - 10
+        
+        # 기본 액션 뼈대
+        base_action = {'type': action_type}
+        if action_type == 'take_diff': base_action['colors'] = take_data
+        else: base_action['color'] = take_data
+
+        if discard_count <= 0:
+            # 버릴 필요가 없으면 그냥 액션 하나만 추가
+            actions.append(base_action)
+        else:
+            # 버려야 한다면, 현재 가진 토큰(temp_gems) 중 discard_count 개수만큼 뽑는 모든 조합 계산
+            # 예: ['red', 'red', 'blue', 'gold'] 뭉치에서 2개를 뽑는 조합
+            gem_pool = []
+            for color, count in temp_gems.items():
+                gem_pool.extend([color] * count)
+                
+            # 중복 제거된 버리기 조합 (set 활용)
+            discard_combos = set(itertools.combinations(gem_pool, discard_count))
+            
+            for d_combo in discard_combos:
+                discard_dict = {c: 0 for c in ['white', 'blue', 'green', 'red', 'black', 'gold']}
+                for c in d_combo:
+                    discard_dict[c] += 1
+                    
+                # 버릴 토큰 정보가 추가된 새로운 액션 생성
+                new_action = base_action.copy()
+                new_action['discard'] = discard_dict
+                actions.append(new_action)
+                
+        return actions

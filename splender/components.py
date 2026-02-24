@@ -8,7 +8,6 @@ class Card:
         self.cost = cost           # 색상별 필요 토큰 딕셔너리
 
     def __repr__(self):
-        # 개발 중 print()를 찍었을 때 카드를 알아보기 쉽게 표현해주는 마법 함수
         return f"<Card {self.id} (T{self.tier}): {self.points}pt, bonus {self.bonus}>"
 
     def to_dict(self):
@@ -18,7 +17,7 @@ class Card:
             "tier": self.tier,
             "bonus": self.bonus,
             "points": self.points,
-            "cost": self.cost.copy() # 원본 훼손 방지를 위해 복사본 전달
+            "cost": self.cost.copy()
         }
 
     @classmethod

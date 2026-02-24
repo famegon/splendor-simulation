@@ -33,29 +33,28 @@ class Player:
         current_bonuses = self.bonuses
 
         for color, cost in card.cost.items():
-            if cost == 0: continue
-            
-            # 1. 보너스로 할인 적용
+            if cost == 0:
+                continue
             cost_after_bonus = max(0, cost - current_bonuses.get(color, 0))
-            
-            # 2. 보유 보석으로 지불 가능한지 확인
             if self.gems[color] < cost_after_bonus:
-                # 부족한 만큼 황금 토큰이 필요함
                 missing_gems += (cost_after_bonus - self.gems[color])
         
-        # 필요한 황금 토큰 수가 내가 가진 황금 토큰보다 적거나 같으면 구매 가능
         return missing_gems <= self.gems['gold']
 
     def pay_for_card(self, card):
         """
-        카드를 구매하기 위해 실제로 토큰을 지불하고, 지불된 토큰 딕셔너리를 반환합니다.
-        (주의: 이 함수는 외부에서 can_buy()가 True일 때만 호출해야 합니다.)
+        카드 구매를 위해 토큰을 지불하고, 지불된 토큰 딕셔너리를 반환합니다.
+        
+        ※ 이 함수의 책임은 '토큰 차감'에 한정됩니다.
+          카드 인벤토리 추가, 점수 갱신, 예약 목록 정리는 GameState.step()이 담당합니다.
+        ※ 반드시 can_buy() == True 인 상태에서만 호출해야 합니다.
         """
         paid_tokens = {'white': 0, 'blue': 0, 'green': 0, 'red': 0, 'black': 0, 'gold': 0}
         current_bonuses = self.bonuses
 
         for color, cost in card.cost.items():
-            if cost == 0: continue
+            if cost == 0:
+                continue
 
             # 1. 보너스 차감
             cost_after_bonus = max(0, cost - current_bonuses.get(color, 0))
@@ -71,17 +70,6 @@ class Player:
                 self.gems['gold'] -= gold_needed
                 paid_tokens['gold'] += gold_needed
 
-        # 플레이어 상태 업데이트 (카드 획득, 점수 추가)
-        self.cards.append(card)
-        self.score += card.points
-        
-        # 예약된 카드였다면 예약 목록에서 제거
-        # (객체 비교를 위해 ID가 같은지 확인)
-        for i, reserved_card in enumerate(self.reserved):
-            if reserved_card.id == card.id:
-                self.reserved.pop(i)
-                break
-                
         return paid_tokens
 
     def to_dict(self):
@@ -101,7 +89,6 @@ class Player:
         """딕셔너리로부터 플레이어 상태를 복원합니다 (시뮬레이션 로딩용)."""
         player = cls(data["id"], data["name"])
         player.gems = data["gems"]
-        # Card, Noble 클래스의 from_dict를 재귀적으로 호출하여 객체 복원
         player.cards = [Card.from_dict(c) for c in data["cards"]]
         player.reserved = [Card.from_dict(c) for c in data["reserved"]]
         player.nobles = [Noble.from_dict(n) for n in data["nobles"]]

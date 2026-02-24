@@ -88,7 +88,7 @@ class Player:
     def from_dict(cls, data):
         """딕셔너리로부터 플레이어 상태를 복원합니다 (시뮬레이션 로딩용)."""
         player = cls(data["id"], data["name"])
-        player.gems = data["gems"]
+        player.gems = data["gems"].copy()  # 얕은 복사 필수 (MCTS 시뮬레이션 시 원본 오염 방지)
         player.cards = [Card.from_dict(c) for c in data["cards"]]
         player.reserved = [Card.from_dict(c) for c in data["reserved"]]
         player.nobles = [Noble.from_dict(n) for n in data["nobles"]]

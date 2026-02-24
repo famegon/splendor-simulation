@@ -28,7 +28,7 @@ class Card:
             tier=data["tier"],
             bonus=data["bonus"],
             points=data["points"],
-            cost=data["cost"]
+            cost=data["cost"].copy()
         )
 
 
@@ -56,5 +56,5 @@ class Noble:
         return cls(
             noble_id=data["id"],
             points=data["points"],
-            requirements=data["requirements"]
+            requirements=data["requirements"].copy()
         )

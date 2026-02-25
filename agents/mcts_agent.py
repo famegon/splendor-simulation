@@ -13,9 +13,11 @@ class MCTSNode:
         self.wins = 0                 # 이 우주에서 승리한 횟수
 
 class MCTSAgent:
-    def __init__(self, player_idx, iterations=100):
+    def __init__(self, player_idx, iterations=100, rollout_max_steps=120):
         self.player_idx = player_idx
         self.iterations = iterations  # 생각할 시간 (시뮬레이션 반복 횟수)
+        # 한 번의 rollout이 너무 길어지는 것을 막아 의사결정 지연을 완화
+        self.rollout_max_steps = rollout_max_steps
 
     def get_action(self, state):
         # 1. 현재 진짜 게임판의 상태를 복제하여 뿌리(Root) 노드 생성
@@ -25,6 +27,10 @@ class MCTSAgent:
         # 임시 게임 엔진 (가상 시뮬레이션용)
         sim_game = GameState.import_state(root_state_dict)
         root_node.untried_actions = sim_game.get_legal_actions()
+
+        # 선택지가 1개뿐이면 탐색 없이 즉시 반환 (불필요한 MCTS 반복 방지)
+        if len(root_node.untried_actions) == 1:
+            return root_node.untried_actions[0]
 
         # 정해진 횟수만큼 평행우주 탐색 반복
         for _ in range(self.iterations):
@@ -39,8 +45,8 @@ class MCTSAgent:
                 
             # 시도 안 한 액션이 있다면 하나 골라서 우주(Node)를 확장함
             if node.untried_actions:
-                action = random.choice(node.untried_actions)
-                node.untried_actions.remove(action)
+                idx = random.randrange(len(node.untried_actions))
+                action = node.untried_actions.pop(idx)
                 
                 sim_game.step(action)
                 new_state_dict = sim_game.export_state()
@@ -51,11 +57,14 @@ class MCTSAgent:
                 node = child_node
 
             # [3] Simulation (시뮬레이션 - 끝날 때까지 막 둬보기)
-            while not sim_game.is_game_over:
-                # 안전장치: 너무 오래 걸리면 중단
-                if not sim_game.get_legal_actions(): break
-                random_action = random.choice(sim_game.get_legal_actions())
+            steps = 0
+            while not sim_game.is_game_over and steps < self.rollout_max_steps:
+                legal_actions = sim_game.get_legal_actions()
+                if not legal_actions:
+                    break
+                random_action = random.choice(legal_actions)
                 sim_game.step(random_action)
+                steps += 1
 
             # [4] Backpropagation (역전파 - 결과 기록하기)
             # 내가 이겼으면 1점, 졌으면 0점
@@ -67,8 +76,12 @@ class MCTSAgent:
                 node = node.parent
 
         # 탐색이 모두 끝나면, 가장 많이 방문한(가장 확실한) 행동을 반환
-        best_child = max(root_node.children, key=lambda c: c.visits)
-        return best_child.action
+        if root_node.children:
+            best_child = max(root_node.children, key=lambda c: c.visits)
+            return best_child.action
+
+        # 반복 횟수가 0인 경우 등, 자식이 생성되지 않았다면 안전하게 fallback
+        return random.choice(root_node.untried_actions)
 
     def _select_best_child(self, node):
         """UCT (Upper Confidence Bound) 공식을 사용하여 승률+탐험 가치가 가장 높은 자식을 고릅니다."""
